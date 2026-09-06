@@ -9,7 +9,7 @@ load_dotenv()  # reads GROQ_API_KEY from a local .env file if present
 CHROMA_PATH = "./chroma_store"
 COLLECTION_NAME = "code_snippets"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-GROQ_MODEL = "llama-3.1-8b-instant"
+GROQ_MODEL = "llama3-8b-8192"
 TOP_K = 3  # how many knowledge base chunks to retrieve per query
 
 SYSTEM_PROMPT_TEMPLATE = """You are an expert Python coding assistant embedded in a \
