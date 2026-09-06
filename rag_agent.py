@@ -1,15 +1,31 @@
+"""
+rag_agent.py
+-------------
+Core logic for the RAG-powered code snippet generator agent.
+
+Responsibilities:
+  1. Retrieve relevant knowledge base chunks for a user query (RAG retrieval).
+  2. Build a system prompt that injects that context.
+  3. Call the Claude API with the running conversation history so the user
+     can iteratively refine the generated code ("now make it async", etc.).
+
+Import `CodeSnippetAgent` from this module in either the CLI (main.py)
+or the Streamlit app (app.py).
+"""
+
 import os
 import chromadb
 from chromadb.utils import embedding_functions
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # reads GROQ_API_KEY from a local .env file if present
 
 CHROMA_PATH = "./chroma_store"
 COLLECTION_NAME = "code_snippets"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-TOP_K = 3
+GROQ_MODEL = os.environ.get("GROQ_MODEL", "openai/gpt-oss-20b")
+TOP_K = 3  # how many knowledge base chunks to retrieve per query
 
 SYSTEM_PROMPT_TEMPLATE = """You are an expert Python coding assistant embedded in a \
 developer tool called the "Code Snippet Generator Agent".
@@ -34,48 +50,16 @@ to this specific request, ignore it and rely on your own knowledge instead.
 """
 
 
-def get_active_llama_model(client: Groq) -> str:
-    """Fetch available models from Groq and pick the best active text generation model."""
-    try:
-        # Exclude guardrails, audio, embeddings, and classifiers
-        excluded_keywords = ["guard", "whisper", "embed", "classifier"]
-        available_models = [
-            m.id for m in client.models.list().data
-            if not any(keyword in m.lower() for keyword in excluded_keywords)
-        ]
-        
-        preferred_llama = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "llama-3.2-3b-preview",
-            "llama-3.2-1b-preview",
-            "llama-3.1-70b-versatile",
-        ]
-        
-        for model_id in preferred_llama:
-            if model_id in available_models:
-                return model_id
-
-        # Fallback to any non-excluded model with 'llama' in its name
-        llama_matches = [m for m in available_models if "llama" in m.lower()]
-        if llama_matches:
-            return llama_matches[0]
-
-        return available_models[0] if available_models else "llama-3.1-8b-instant"
-    except Exception:
-        return "llama-3.1-8b-instant"
-
-
 class CodeSnippetAgent:
     def __init__(self, api_key: str | None = None):
         api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError(
-                "No Groq API key found. Set GROQ_API_KEY as an environment variable or in Secrets."
+                "No Groq API key found. Set GROQ_API_KEY as an environment "
+                "variable or in a .env file (see .env.example)."
             )
 
         self.llm_client = Groq(api_key=api_key)
-        self.model = get_active_llama_model(self.llm_client)
 
         embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL
@@ -90,8 +74,8 @@ class CodeSnippetAgent:
                 "Vector index not found. Run `python build_index.py` first."
             ) from e
 
-        self.conversation: list[dict] = []
-        self.last_retrieved: list[str] = []
+        self.conversation: list[dict] = []  # running chat history for refinement
+        self.last_retrieved: list[str] = []  # for transparency/debugging in UI
 
     def retrieve_context(self, query: str, k: int = TOP_K) -> list[str]:
         """Fetch the top-k most relevant knowledge base chunks for this query."""
@@ -101,7 +85,8 @@ class CodeSnippetAgent:
         return docs
 
     def ask(self, user_message: str) -> str:
-        """Send user message to Groq using the detected active chat model."""
+        """Send a user message (with retrieved context) to Claude and return the reply.
+        Maintains conversation history internally so follow-up requests work."""
         context_chunks = self.retrieve_context(user_message)
         context_text = "\n\n".join(f"- {c}" for c in context_chunks) or "(no relevant matches found)"
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
@@ -109,12 +94,13 @@ class CodeSnippetAgent:
         self.conversation.append({"role": "user", "content": user_message})
 
         response = self.llm_client.chat.completions.create(
-            model=self.model,
-            max_tokens=512,
+            model=GROQ_MODEL,
+            max_tokens=1500,
             messages=[{"role": "system", "content": system_prompt}] + self.conversation,
         )
 
         reply_text = response.choices[0].message.content
+
         self.conversation.append({"role": "assistant", "content": reply_text})
         return reply_text
 
