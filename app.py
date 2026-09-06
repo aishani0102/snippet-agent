@@ -1,20 +1,17 @@
-"""
-app.py
--------
-Streamlit web UI for the Code Snippet Generator Agent.
-
-Usage:
-    python build_index.py      # one-time setup
-    streamlit run app.py
-"""
-
+import os
 import streamlit as st
 from rag_agent import CodeSnippetAgent
+from build_index import build_index
 
 st.set_page_config(page_title="Code Snippet Generator Agent", page_icon="🧩", layout="centered")
 
 st.title("🧩 Code Snippet Generator Agent")
 st.caption("Describe what you need in plain English. Ask follow-up questions to refine the code — RAG-grounded with Groq.")
+
+# --- Ensure ChromaDB index exists on Cloud startup ---
+if not os.path.exists("./chroma_store"):
+    with st.spinner("Building vector index for the first time..."):
+        build_index()
 
 # --- Initialize agent + chat history once per session ---
 if "agent" not in st.session_state:
@@ -30,7 +27,7 @@ if "display_history" not in st.session_state:
 
 if st.session_state.error:
     st.error(st.session_state.error)
-    st.info("Set ANTHROPIC_API_KEY in a .env file or environment variable, then reload.")
+    st.info("Set GROQ_API_KEY in Streamlit Cloud Secrets or environment variables, then reload.")
     st.stop()
 
 agent = st.session_state.agent
