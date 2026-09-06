@@ -39,7 +39,6 @@ def get_active_llama_model(client: Groq) -> str:
     try:
         available_models = [m.id for m in client.models.list().data]
         
-        # Preferred order for active Llama models
         preferred_llama = [
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
@@ -52,12 +51,10 @@ def get_active_llama_model(client: Groq) -> str:
             if model_id in available_models:
                 return model_id
 
-        # Fallback to any model with 'llama' in its name
         llama_matches = [m for m in available_models if "llama" in m.lower()]
         if llama_matches:
             return llama_matches[0]
 
-        # Last resort fallback if no Llama models are matched
         return available_models[0] if available_models else "llama-3.1-8b-instant"
     except Exception:
         return "llama-3.1-8b-instant"
@@ -107,7 +104,7 @@ class CodeSnippetAgent:
 
         response = self.llm_client.chat.completions.create(
             model=self.model,
-            max_tokens=1500,
+            max_tokens=512,
             messages=[{"role": "system", "content": system_prompt}] + self.conversation,
         )
 
