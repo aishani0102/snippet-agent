@@ -8,16 +8,25 @@ st.set_page_config(page_title="Code Snippet Generator Agent", page_icon="🧩", 
 st.title("🧩 Code Snippet Generator Agent")
 st.caption("Describe what you need in plain English. Ask follow-up questions to refine the code — RAG-grounded with Groq.")
 
-# --- Ensure ChromaDB index exists on Cloud startup ---
-if not os.path.exists("./chroma_store"):
-    with st.spinner("Building vector index for the first time..."):
-        build_index()
-
-# --- Initialize agent + chat history once per session ---
+# --- Initialize agent + auto-build index if missing or incomplete ---
 if "agent" not in st.session_state:
+    if not os.path.exists("./chroma_store"):
+        with st.spinner("Building vector index for the first time..."):
+            build_index()
+
     try:
         st.session_state.agent = CodeSnippetAgent()
         st.session_state.error = None
+    except RuntimeError as e:
+        # Fallback: rebuild index if directory exists but collection initialization fails
+        with st.spinner("Vector index not found. Building vector index..."):
+            build_index()
+        try:
+            st.session_state.agent = CodeSnippetAgent()
+            st.session_state.error = None
+        except Exception as retry_e:
+            st.session_state.agent = None
+            st.session_state.error = str(retry_e)
     except Exception as e:
         st.session_state.agent = None
         st.session_state.error = str(e)
