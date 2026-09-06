@@ -35,9 +35,14 @@ to this specific request, ignore it and rely on your own knowledge instead.
 
 
 def get_active_llama_model(client: Groq) -> str:
-    """Fetch available models from Groq and pick the first active Llama model."""
+    """Fetch available models from Groq and pick the best active text generation model."""
     try:
-        available_models = [m.id for m in client.models.list().data]
+        # Exclude guardrails, audio, embeddings, and classifiers
+        excluded_keywords = ["guard", "whisper", "embed", "classifier"]
+        available_models = [
+            m.id for m in client.models.list().data
+            if not any(keyword in m.lower() for keyword in excluded_keywords)
+        ]
         
         preferred_llama = [
             "llama-3.3-70b-versatile",
@@ -51,6 +56,7 @@ def get_active_llama_model(client: Groq) -> str:
             if model_id in available_models:
                 return model_id
 
+        # Fallback to any non-excluded model with 'llama' in its name
         llama_matches = [m for m in available_models if "llama" in m.lower()]
         if llama_matches:
             return llama_matches[0]
@@ -95,7 +101,7 @@ class CodeSnippetAgent:
         return docs
 
     def ask(self, user_message: str) -> str:
-        """Send user message to Groq using the detected active Llama model."""
+        """Send user message to Groq using the detected active chat model."""
         context_chunks = self.retrieve_context(user_message)
         context_text = "\n\n".join(f"- {c}" for c in context_chunks) or "(no relevant matches found)"
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
