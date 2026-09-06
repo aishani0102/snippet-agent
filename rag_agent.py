@@ -4,13 +4,12 @@ from chromadb.utils import embedding_functions
 from groq import Groq
 from dotenv import load_dotenv
 
-load_dotenv()  # reads GROQ_API_KEY from a local .env file if present
+load_dotenv()
 
 CHROMA_PATH = "./chroma_store"
 COLLECTION_NAME = "code_snippets"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-GROQ_MODEL = "llama-3.1-8b-instant"
-TOP_K = 3  # how many knowledge base chunks to retrieve per query
+TOP_K = 3
 
 SYSTEM_PROMPT_TEMPLATE = """You are an expert Python coding assistant embedded in a \
 developer tool called the "Code Snippet Generator Agent".
@@ -35,16 +34,45 @@ to this specific request, ignore it and rely on your own knowledge instead.
 """
 
 
+def get_active_llama_model(client: Groq) -> str:
+    """Fetch available models from Groq and pick the first active Llama model."""
+    try:
+        available_models = [m.id for m in client.models.list().data]
+        
+        # Preferred order for active Llama models
+        preferred_llama = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "llama-3.2-3b-preview",
+            "llama-3.2-1b-preview",
+            "llama-3.1-70b-versatile",
+        ]
+        
+        for model_id in preferred_llama:
+            if model_id in available_models:
+                return model_id
+
+        # Fallback to any model with 'llama' in its name
+        llama_matches = [m for m in available_models if "llama" in m.lower()]
+        if llama_matches:
+            return llama_matches[0]
+
+        # Last resort fallback if no Llama models are matched
+        return available_models[0] if available_models else "llama-3.1-8b-instant"
+    except Exception:
+        return "llama-3.1-8b-instant"
+
+
 class CodeSnippetAgent:
     def __init__(self, api_key: str | None = None):
         api_key = api_key or os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError(
-                "No Groq API key found. Set GROQ_API_KEY as an environment "
-                "variable or in a .env file (see .env.example)."
+                "No Groq API key found. Set GROQ_API_KEY as an environment variable or in Secrets."
             )
 
         self.llm_client = Groq(api_key=api_key)
+        self.model = get_active_llama_model(self.llm_client)
 
         embed_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL
@@ -59,8 +87,8 @@ class CodeSnippetAgent:
                 "Vector index not found. Run `python build_index.py` first."
             ) from e
 
-        self.conversation: list[dict] = []  # running chat history for refinement
-        self.last_retrieved: list[str] = []  # for transparency/debugging in UI
+        self.conversation: list[dict] = []
+        self.last_retrieved: list[str] = []
 
     def retrieve_context(self, query: str, k: int = TOP_K) -> list[str]:
         """Fetch the top-k most relevant knowledge base chunks for this query."""
@@ -70,7 +98,7 @@ class CodeSnippetAgent:
         return docs
 
     def ask(self, user_message: str) -> str:
-        """Send a user message (with retrieved context) to Groq and return the reply."""
+        """Send user message to Groq using the detected active Llama model."""
         context_chunks = self.retrieve_context(user_message)
         context_text = "\n\n".join(f"- {c}" for c in context_chunks) or "(no relevant matches found)"
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
@@ -78,13 +106,12 @@ class CodeSnippetAgent:
         self.conversation.append({"role": "user", "content": user_message})
 
         response = self.llm_client.chat.completions.create(
-            model=GROQ_MODEL,
+            model=self.model,
             max_tokens=1500,
             messages=[{"role": "system", "content": system_prompt}] + self.conversation,
         )
 
         reply_text = response.choices[0].message.content
-
         self.conversation.append({"role": "assistant", "content": reply_text})
         return reply_text
 
