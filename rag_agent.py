@@ -1,18 +1,3 @@
-"""
-rag_agent.py
--------------
-Core logic for the RAG-powered code snippet generator agent.
-
-Responsibilities:
-  1. Retrieve relevant knowledge base chunks for a user query (RAG retrieval).
-  2. Build a system prompt that injects that context.
-  3. Call the Claude API with the running conversation history so the user
-     can iteratively refine the generated code ("now make it async", etc.).
-
-Import `CodeSnippetAgent` from this module in either the CLI (main.py)
-or the Streamlit app (app.py).
-"""
-
 import os
 import chromadb
 from chromadb.utils import embedding_functions
@@ -24,7 +9,7 @@ load_dotenv()  # reads GROQ_API_KEY from a local .env file if present
 CHROMA_PATH = "./chroma_store"
 COLLECTION_NAME = "code_snippets"
 EMBEDDING_MODEL = "all-MiniLM-L6-v2"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+GROQ_MODEL = "llama-3.1-8b-instant"
 TOP_K = 3  # how many knowledge base chunks to retrieve per query
 
 SYSTEM_PROMPT_TEMPLATE = """You are an expert Python coding assistant embedded in a \
@@ -85,8 +70,7 @@ class CodeSnippetAgent:
         return docs
 
     def ask(self, user_message: str) -> str:
-        """Send a user message (with retrieved context) to Claude and return the reply.
-        Maintains conversation history internally so follow-up requests work."""
+        """Send a user message (with retrieved context) to Groq and return the reply."""
         context_chunks = self.retrieve_context(user_message)
         context_text = "\n\n".join(f"- {c}" for c in context_chunks) or "(no relevant matches found)"
         system_prompt = SYSTEM_PROMPT_TEMPLATE.format(context=context_text)
